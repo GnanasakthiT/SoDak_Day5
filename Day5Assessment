@@ -1,0 +1,126 @@
+import os
+import sqlite3
+from langchain_core.tools import tool
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain.agents import AgentExecutor, create_tool_calling_agent
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+
+# ---------------------------------------------------------
+# 1. Database Setup
+# ---------------------------------------------------------
+def setup_database():
+    conn = sqlite3.connect("students.db")
+    cursor = conn.cursor()
+    
+    # Create students table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS students (
+            student_id TEXT PRIMARY KEY,
+            name TEXT,
+            department TEXT,
+            python INTEGER,
+            database INTEGER,
+            ai INTEGER,
+            web INTEGER
+        )
+    """)
+    
+    # Insert initial records
+    students_data = [
+        ("22CS045", "Dhanushya", "Computer Science", 85, 72, 90, 78),
+        ("22CS046", "Rahul", "Computer Science", 65, 70, 68, 72),
+        ("22CS047", "Priya", "Information Technology", 92, 88, 95, 90),
+        ("22CS048", "Arun", "Information Technology", 55, 60, 58, 62),
+        ("22CS049", "Meena", "Computer Science", 78, 85, 80, 88),
+    ]
+    
+    cursor.executemany("""
+        INSERT OR IGNORE INTO students (student_id, name, department, python, database, ai, web)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, students_data)
+    
+    conn.commit()
+    conn.close()
+
+# ---------------------------------------------------------
+# 2. Tool Definitions
+# ---------------------------------------------------------
+@tool
+def get_student_info(student_id: str) -> str:
+    """Returns the student's name and department given their student_id."""
+    conn = sqlite3.connect("students.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT name, department FROM students WHERE student_id = ?", (student_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return f"Name: {row[0]}, Department: {row[1]}"
+    return "Student not found."
+
+@tool
+def get_student_marks(student_id: str) -> str:
+    """Returns the student's marks in Python, Database, AI, and Web given their student_id."""
+    conn = sqlite3.connect("students.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT python, database, ai, web FROM students WHERE student_id = ?", (student_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return f"Python: {row[0]}, Database: {row[1]}, AI: {row[2]}, Web: {row[3]}"
+    return "Student marks not found."
+
+@tool
+def calculator(expression: str) -> str:
+    """Evaluates a mathematical expression to calculate totals, averages, etc. E.g., '(85+72+90+78)' or '(85+72+90+78)/4'."""
+    try:
+        # Safe evaluation for basic arithmetic expressions
+        result = eval(expression, {"__builtins__": None}, {})
+        return str(result)
+    except Exception as e:
+        return f"Error evaluating expression: {e}"
+
+@tool
+def get_passing_rules() -> str:
+    """Returns the university passing rules: minimum overall average of 40% and minimum 35% in each subject."""
+    return "Minimum overall average: 40%, Minimum mark in each subject: 35%"
+
+# ---------------------------------------------------------
+# 3. Main Execution Flow
+# ---------------------------------------------------------
+def main():
+    # Setup database on startup
+    setup_database()
+    
+    # Initialize the Gemini model
+    # Note: Make sure GOOGLE_API_KEY environment variable is set.
+    llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro", temperature=0)
+
+    # List of tools
+    tools = [get_student_info, get_student_marks, calculator, get_passing_rules]
+
+    # Create prompt template for the agent
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", "You are an intelligent university assistant agent. Use the available tools step-by-step to accurately answer student queries."),
+        MessagesPlaceholder("chat_history", optional=True),
+        ("human", "{input}"),
+        MessagesPlaceholder("agent_scratchpad"),
+    ])
+
+    # Create the agent and executor
+    agent = create_tool_calling_agent(llm, tools, prompt)
+    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+    # Run the Challenge Question
+    query = (
+        "I am 22CS045. Tell me my name, department, total marks, "
+        "average marks, and whether I satisfy the university passing requirements."
+    )
+
+    print(f"Running query: {query}\n")
+    response = agent_executor.invoke({"input": query})
+
+    print("\n### Final Agent Response ###")
+    print(response["output"])
+
+if __name__ == "__main__":
+    main()
