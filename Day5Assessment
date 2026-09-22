@@ -2,7 +2,7 @@ import os
 import sqlite3
 from langchain_core.tools import tool
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.agents import AgentExecutor, create_tool_calling_agent
+from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 # ---------------------------------------------------------
@@ -91,9 +91,8 @@ def main():
     # Setup database on startup
     setup_database()
     
-    # Initialize the Gemini model
-    # Note: Make sure GOOGLE_API_KEY environment variable is set.
-    llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro", temperature=0)
+    # Initialize the Gemini model using a supported active model name
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
 
     # List of tools
     tools = [get_student_info, get_student_marks, calculator, get_passing_rules]
@@ -106,7 +105,7 @@ def main():
         MessagesPlaceholder("agent_scratchpad"),
     ])
 
-    # Create the agent and executor
+    # Create the agent and executor using langchain_classic
     agent = create_tool_calling_agent(llm, tools, prompt)
     agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
 
